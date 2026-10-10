@@ -1,0 +1,58 @@
+server:
+  port: 8080                                  # Gateway 的入口 port
+
+spring:
+  application:
+    name: api-gateway
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: http://localhost:8081   # ⚠️ 講師的值；auth-service 實際在 9000，之後要改
+  data:
+    redis:
+      host: localhost
+      port: 6379                              # 限流用的 Redis
+  cloud:
+    gateway:
+      default-filters:
+        - name: RequestRateLimiter            # 全域限流
+          args:
+            redis-rate-limiter.replenishRate: 5
+            redis-rate-limiter.burstCapacity: 10
+      routes:
+        - id: account-service
+          uri: lb://account-service
+          predicates:
+            - Path=/api/account/**
+          filters:
+            - StripPrefix=1
+
+        - id: transaction-service
+          uri: lb://transaction-service
+          predicates:
+            - Path=/api/transaction/**
+          filters:
+            - StripPrefix=1
+            - name: CircuitBreaker
+              args:
+                name: transactionCB
+
+        # ── 第 7 集新增 ──
+        - id: auth-service
+          uri: lb://auth-service              # 去 Eureka 找 auth-service
+          predicates:
+            - Path=/auth/**,/oauth2/**        # 這兩種開頭的請求轉給 auth-service
+          filters:
+            - StripPrefix=1                   # ⚠️ 講師有加；建議刪掉這兩行（filters 和這行）
+
+eureka:
+  client:
+    service-url:
+      defaultZone: http://localhost:8761/eureka   # Eureka 總機位址
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
